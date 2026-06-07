@@ -1,0 +1,11 @@
+# Build artifacts
+build/
+MacLngSwitcher.app/
+
+# Logs
+*.log
+
+# macOS system files
+.DS_Store
+.cfusertextattrib
+.localized
