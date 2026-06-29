@@ -1,26 +1,26 @@
 #!/bin/bash
-# Скрипт автоматической сборки MacLngSwitcher
+# Automatic build script for MacLngSwitcher
 
 set -e
 
-# Переходим в каталог скрипта
+# Change directory to script's location
 cd "$(dirname "$0")"
 
-echo "=== Сборка MacLngSwitcher ==="
+echo "=== Building MacLngSwitcher ==="
 
-# 1. Очистка и создание структуры
-echo "1. Подготовка структуры..."
+# 1. Clean and create structure
+echo "1. Preparing structure..."
 rm -rf build MacLngSwitcher.app
 mkdir -p build
 mkdir -p MacLngSwitcher.app/Contents/MacOS
 mkdir -p MacLngSwitcher.app/Contents/Resources
 
-# 2. Генерация иконок
-echo "2. Генерация иконки приложения..."
+# 2. Generate icons
+echo "2. Generating app icon..."
 mkdir -p build/AppIcon.iconset
 swift scripts/generate_icon.swift build/icon_master.png
 
-# Нарезаем мастер-картинку на размеры для .icns
+# Resize master image to iconset dimensions for .icns
 sips -z 16 16     build/icon_master.png --out build/AppIcon.iconset/icon_16x16.png
 sips -z 32 32     build/icon_master.png --out build/AppIcon.iconset/icon_16x16@2x.png
 sips -z 32 32     build/icon_master.png --out build/AppIcon.iconset/icon_32x32.png
@@ -32,24 +32,24 @@ sips -z 512 512   build/icon_master.png --out build/AppIcon.iconset/icon_256x256
 sips -z 512 512   build/icon_master.png --out build/AppIcon.iconset/icon_512x512.png
 sips -z 1024 1024 build/icon_master.png --out build/AppIcon.iconset/icon_512x512@2x.png
 
-# Создаем .icns файл
+# Create .icns file
 iconutil -c icns build/AppIcon.iconset -o MacLngSwitcher.app/Contents/Resources/AppIcon.icns
 
-# 3. Копирование Info.plist
-echo "3. Установка Info.plist..."
+# 3. Copy Info.plist
+echo "3. Installing Info.plist..."
 cp Resources/Info.plist MacLngSwitcher.app/Contents/Info.plist
 
-# 4. Компиляция исходного кода Swift
-echo "4. Компиляция исходных файлов..."
+# 4. Compile Swift source code
+echo "4. Compiling source files..."
 ARCH=$(uname -m)
 SDK_PATH=$(xcrun --show-sdk-path --sdk macosx)
 
-# Собираем все .swift файлы в Sources
+# Build all .swift files in Sources
 swiftc Sources/*.swift \
     -o MacLngSwitcher.app/Contents/MacOS/MacLngSwitcher \
     -target ${ARCH}-apple-macos13.0 \
     -sdk ${SDK_PATH} \
     -O
 
-echo "=== Сборка успешно завершена! ==="
-echo "Вы можете запустить приложение командой: open MacLngSwitcher.app"
+echo "=== Build completed successfully! ==="
+echo "You can launch the app using: open MacLngSwitcher.app"

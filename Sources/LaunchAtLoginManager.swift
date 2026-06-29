@@ -8,7 +8,7 @@ public class LaunchAtLoginManager: ObservableObject {
     
     @Published public var isEnabled: Bool = false {
         didSet {
-            // Избегаем бесконечной рекурсии, меняя только если статус действительно отличается
+            // Avoid infinite recursion by updating only if the status actually differs
             let currentStatus = service.status == .enabled
             if isEnabled != currentStatus {
                 updateLaunchAtLogin(enabled: isEnabled)
@@ -31,10 +31,10 @@ public class LaunchAtLoginManager: ObservableObject {
         if enabled {
             do {
                 try service.register()
-                NSLog("[LaunchAtLogin] Успешно зарегистрирован автозапуск.")
+                NSLog("[LaunchAtLogin] Successfully registered launch at login.")
             } catch {
-                NSLog("[LaunchAtLogin] Ошибка регистрации автозапуска: %@", error.localizedDescription)
-                // Возвращаем переключатель назад в UI
+                NSLog("[LaunchAtLogin] Error registering launch at login: %@", error.localizedDescription)
+                // Revert the toggle in the UI
                 DispatchQueue.main.async {
                     self.isEnabled = false
                 }
@@ -42,10 +42,10 @@ public class LaunchAtLoginManager: ObservableObject {
         } else {
             do {
                 try service.unregister()
-                NSLog("[LaunchAtLogin] Успешно отменен автозапуск.")
+                NSLog("[LaunchAtLogin] Successfully unregistered launch at login.")
             } catch {
-                NSLog("[LaunchAtLogin] Ошибка отмены автозапуска: %@", error.localizedDescription)
-                // Возвращаем переключатель назад в UI
+                NSLog("[LaunchAtLogin] Error unregistering launch at login: %@", error.localizedDescription)
+                // Revert the toggle in the UI
                 DispatchQueue.main.async {
                     self.isEnabled = true
                 }

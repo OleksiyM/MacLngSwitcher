@@ -8,7 +8,7 @@ public class EventTapManager: ObservableObject {
     @Published public var hasAccessibilityAccess: Bool = false
     @Published public var isEnabled: Bool = true
     
-    // Настройки пользователя (с автосохранением в UserDefaults)
+    // User preferences (auto-saved in UserDefaults)
     @Published public var leftControlLayoutID: String {
         didSet {
             UserDefaults.standard.set(leftControlLayoutID, forKey: "leftControlLayoutID")
@@ -30,7 +30,7 @@ public class EventTapManager: ObservableObject {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     
-    // Состояние нажатия клавиш
+    // Key press state
     private struct ModifierState {
         var isPressed: Bool = false
         var pressTime: Date = Date()
@@ -41,16 +41,16 @@ public class EventTapManager: ObservableObject {
     private var rightControlState = ModifierState()
     
     private init() {
-        // Убедимся, что раскладки отсканированы
+        // Ensure keyboard layouts are scanned
         KeyboardLayoutManager.shared.refreshAvailableLayouts()
         let layouts = KeyboardLayoutManager.shared.availableLayouts
         
-        // 1. Сначала определяем значения локально, не используя self
+        // 1. Determine local values without referencing 'self'
         let chosenLeftID: String
         if let savedLeft = UserDefaults.standard.string(forKey: "leftControlLayoutID") {
             chosenLeftID = savedLeft
         } else {
-            // Ищем подходящий английский (ABC, US, English)
+            // Look for a suitable default English layout (ABC, US, English)
             let defaultLeft = layouts.first(where: { $0.id.contains("ABC") })?.id ??
                               layouts.first(where: { $0.id.contains("US") })?.id ??
                               layouts.first(where: { $0.name.lowercased().contains("english") || $0.name.lowercased().contains("u.s.") })?.id ??
@@ -64,20 +64,20 @@ public class EventTapManager: ObservableObject {
             chosenRightIDs = savedRight
         } else {
             var selected: [String] = []
-            // Ищем русский
+            // Look for Russian layout
             if let ru = layouts.first(where: { $0.id.lowercased().contains("russian") || $0.name.lowercased().contains("рус") }) {
                 selected.append(ru.id)
             }
-            // Ищем украинский
+            // Look for Ukrainian layout
             if let ua = layouts.first(where: { $0.id.lowercased().contains("ukrainian") || $0.name.lowercased().contains("укр") }) {
                 selected.append(ua.id)
             }
             
-            // Если ничего не нашли, берем все раскладки, отличные от левой
+            // If none found, take all layouts different from the left one
             if selected.isEmpty {
                 selected = layouts.filter({ $0.id != chosenLeftID }).map({ $0.id })
             }
-            // Если все равно пусто, ставим заглушку
+            // Fallback placeholder if still empty
             if selected.isEmpty {
                 selected = ["com.apple.keylayout.Russian"]
             }
@@ -88,19 +88,22 @@ public class EventTapManager: ObservableObject {
         let savedTimeout = UserDefaults.standard.double(forKey: "clickTimeout")
         let chosenTimeout = savedTimeout > 0 ? savedTimeout : 0.35
         
-        // 2. Инициализируем свойства класса
+        // 2. Initialize properties
         self.leftControlLayoutID = chosenLeftID
         self.rightControlLayoutIDs = chosenRightIDs
         self.clickTimeout = chosenTimeout
         
-        // 3. Вызываем методы экземпляра класса
+        // Validate and filter layouts right after loading
+        validateAndFilterLayouts()
+        
+        // 3. Call instance methods
         checkAccessibility(prompt: false)
         if hasAccessibilityAccess {
             startEventTap()
         }
     }
     
-    /// Проверка прав Accessibility
+    /// Checks for accessibility permissions
     public func checkAccessibility(prompt: Bool) {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt] as CFDictionary
         let access = AXIsProcessTrustedWithOptions(options)
@@ -111,7 +114,51 @@ public class EventTapManager: ObservableObject {
         }
     }
     
-    /// Запуск перехвата событий
+    /// Validates and filters selected layouts to match active system layouts.
+    /// This prevents "phantom" layouts if system keyboard settings change.
+    public func validateAndFilterLayouts() {
+        // Get fresh list of active layouts
+        KeyboardLayoutManager.shared.refreshAvailableLayouts()
+        let availableIDs = KeyboardLayoutManager.shared.availableLayouts.map { $0.id }
+        
+        guard !availableIDs.isEmpty else { return }
+        
+        // 1. Validate and adjust Left Control
+        if !availableIDs.contains(leftControlLayoutID) {
+            // If saved layout is unavailable, fallback to US layout or first available
+            let fallbackLeft = availableIDs.first(where: { $0.contains("ABC") }) ??
+                               availableIDs.first(where: { $0.contains("US") }) ??
+                               availableIDs.first ??
+                               ""
+            if !fallbackLeft.isEmpty {
+                leftControlLayoutID = fallbackLeft
+                DebugLogger.log("[EventTap] Left Control adjusted to: \(fallbackLeft)")
+            }
+        }
+        
+        // 2. Filter Right Control, keeping only active system layouts
+        var filteredRight = rightControlLayoutIDs.filter { availableIDs.contains($0) }
+        
+        // 3. If filtered list is empty, automatically populate with defaults
+        if filteredRight.isEmpty {
+            // Get all active layouts except the one assigned to Left Control
+            filteredRight = availableIDs.filter { $0 != leftControlLayoutID }
+            
+            // If still empty (e.g. only one layout exists), fallback to it
+            if filteredRight.isEmpty, let first = availableIDs.first {
+                filteredRight = [first]
+            }
+            
+            DebugLogger.log("[EventTap] Right list was empty or invalid, auto-populating: \(filteredRight)")
+        }
+        
+        if filteredRight != rightControlLayoutIDs {
+            rightControlLayoutIDs = filteredRight
+            DebugLogger.log("[EventTap] Right list adjusted to: \(filteredRight)")
+        }
+    }
+    
+    /// Starts the event tap
     public func startEventTap() {
         guard eventTap == nil else { return }
         
@@ -135,7 +182,7 @@ public class EventTapManager: ObservableObject {
         )
         
         guard let tap = eventTap else {
-            DebugLogger.log("[EventTap] Не удалось создать CGEventTap. Возможно, нет прав доступности.")
+            DebugLogger.log("[EventTap] Failed to create CGEventTap. Missing accessibility permissions?")
             return
         }
         
@@ -143,34 +190,34 @@ public class EventTapManager: ObservableObject {
         if let source = runLoopSource {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
-            DebugLogger.log("[EventTap] Успешно запущен.")
+            DebugLogger.log("[EventTap] Successfully started.")
         }
     }
     
-    /// Остановка перехвата
+    /// Stops the event tap
     public func stopEventTap() {
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
             runLoopSource = nil
         }
         eventTap = nil
-        DebugLogger.log("[EventTap] Остановлен.")
+        DebugLogger.log("[EventTap] Stopped.")
     }
     
-    /// Перезапуск перехвата
+    /// Restarts the event tap
     public func restartEventTap() {
         stopEventTap()
         startEventTap()
     }
     
-    /// Основной обработчик событий
+    /// Main event handler
     private func handleEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         guard isEnabled else { return Unmanaged.passUnretained(event) }
         
         let keycode = event.getIntegerValueField(.keyboardEventKeycode)
         DebugLogger.log("[EventTap] handleEvent: type=\(type.rawValue), keycode=\(keycode)")
         
-        // Если это обычное нажатие/отпускание клавиши, ставим флаг "другие клавиши" для зажатых модификаторов
+        // If a normal key is pressed/released, mark "hasOtherKeys" on active modifiers
         if type == .keyDown || type == .keyUp {
             if leftControlState.isPressed {
                 leftControlState.hasOtherKeys = true
@@ -182,14 +229,14 @@ public class EventTapManager: ObservableObject {
         }
         
         if type == .flagsChanged {
-            // Преобразуем CGEvent в NSEvent для надежного считывания device-dependent флагов
+            // Convert CGEvent to NSEvent to reliably read device-dependent flags
             guard let nsEvent = NSEvent(cgEvent: event) else {
                 return Unmanaged.passUnretained(event)
             }
             
             let rawFlags = nsEvent.modifierFlags.rawValue
             
-            // Маски для левого и правого Control (device-dependent)
+            // Device-dependent masks for left and right Control
             let leftCtrlFlag: UInt = 0x00000001
             let rightCtrlFlag: UInt = 0x00002000
             
@@ -198,27 +245,27 @@ public class EventTapManager: ObservableObject {
             
             DebugLogger.log("[EventTap] flagsChanged: keycode=\(keycode), leftPressed=\(isLeftNowPressed), rightPressed=\(isRightNowPressed), rawFlags=\(rawFlags)")
             
-            // Если нажат левый Control, но изменился другой модификатор (например, Shift)
+            // If left Control is pressed, but another modifier (like Shift) triggers
             if leftControlState.isPressed && keycode != 59 {
                 leftControlState.hasOtherKeys = true
             }
-            // Если нажат правый Control, но изменился другой модификатор
+            // If right Control is pressed, but another modifier triggers
             if rightControlState.isPressed && keycode != 62 {
                 rightControlState.hasOtherKeys = true
             }
             
-            // 1. Обработка Левого Control (keycode 59)
+            // 1. Left Control Handling (keycode 59)
             if keycode == 59 {
                 if isLeftNowPressed && !leftControlState.isPressed {
-                    // Клавиша зажата
+                    // Key pressed
                     leftControlState.isPressed = true
                     leftControlState.pressTime = Date()
                     leftControlState.hasOtherKeys = false
-                    DebugLogger.log("[EventTap] Нажат левый Control")
+                    DebugLogger.log("[EventTap] Left Control pressed")
                 } else if !isLeftNowPressed && leftControlState.isPressed {
-                    // Клавиша отпущена
+                    // Key released
                     let duration = Date().timeIntervalSince(leftControlState.pressTime)
-                    DebugLogger.log("[EventTap] Отпущен левый Control, удержание: \(duration) сек, другие клавиши: \(leftControlState.hasOtherKeys)")
+                    DebugLogger.log("[EventTap] Left Control released, duration: \(duration) sec, hasOtherKeys: \(leftControlState.hasOtherKeys)")
                     if !leftControlState.hasOtherKeys && duration < clickTimeout {
                         triggerLeftControlAction()
                     }
@@ -226,18 +273,18 @@ public class EventTapManager: ObservableObject {
                 }
             }
             
-            // 2. Обработка Правого Control (keycode 62)
+            // 2. Right Control Handling (keycode 62)
             if keycode == 62 {
                 if isRightNowPressed && !rightControlState.isPressed {
-                    // Клавиша зажата
+                    // Key pressed
                     rightControlState.isPressed = true
                     rightControlState.pressTime = Date()
                     rightControlState.hasOtherKeys = false
-                    DebugLogger.log("[EventTap] Нажат правый Control")
+                    DebugLogger.log("[EventTap] Right Control pressed")
                 } else if !isRightNowPressed && rightControlState.isPressed {
-                    // Клавиша отпущена
+                    // Key released
                     let duration = Date().timeIntervalSince(rightControlState.pressTime)
-                    DebugLogger.log("[EventTap] Отпущен правый Control, удержание: \(duration) сек, другие клавиши: \(rightControlState.hasOtherKeys)")
+                    DebugLogger.log("[EventTap] Right Control released, duration: \(duration) sec, hasOtherKeys: \(rightControlState.hasOtherKeys)")
                     if !rightControlState.hasOtherKeys && duration < clickTimeout {
                         triggerRightControlAction()
                     }
@@ -249,23 +296,23 @@ public class EventTapManager: ObservableObject {
         return Unmanaged.passUnretained(event)
     }
     
-    /// Действие по нажатию левого Control
+    /// Trigger action on Left Control click
     private func triggerLeftControlAction() {
-        DebugLogger.log("[EventTap] Клик левого Control -> переключение на \(leftControlLayoutID)")
+        DebugLogger.log("[EventTap] Left Control click -> switching to \(leftControlLayoutID)")
         DispatchQueue.main.async {
             let success = KeyboardLayoutManager.shared.selectLayout(id: self.leftControlLayoutID)
-            DebugLogger.log("[EventTap] Переключение на левый Control результат: \(success)")
+            DebugLogger.log("[EventTap] Switch Left Control layout result: \(success)")
         }
     }
     
-    /// Действие по нажатию правого Control
+    /// Trigger action on Right Control click
     private func triggerRightControlAction() {
-        DebugLogger.log("[EventTap] Клик правого Control -> цикл раскладок \(rightControlLayoutIDs)")
+        DebugLogger.log("[EventTap] Right Control click -> cycling layouts \(rightControlLayoutIDs)")
         DispatchQueue.main.async {
             let currentBefore = KeyboardLayoutManager.shared.getCurrentLayoutID() ?? "unknown"
             KeyboardLayoutManager.shared.cycleLayouts(ids: self.rightControlLayoutIDs)
             let currentAfter = KeyboardLayoutManager.shared.getCurrentLayoutID() ?? "unknown"
-            DebugLogger.log("[EventTap] Переключение правого Control: \(currentBefore) -> \(currentAfter)")
+            DebugLogger.log("[EventTap] Switch Right Control layout: \(currentBefore) -> \(currentAfter)")
         }
     }
 }

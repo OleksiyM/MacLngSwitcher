@@ -1,11 +1,11 @@
 import Cocoa
 
-// Отключаем буферизацию вывода
+// Disable output buffering
 setbuf(stdout, nil)
 setbuf(stderr, nil)
 
 let delegate = AppDelegate()
 NSApplication.shared.delegate = delegate
 
-// Запуск цикла событий Cocoa приложения
+// Start the Cocoa application event loop
 _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)

@@ -140,31 +140,32 @@ struct SettingsView: View {
                                 ForEach(layoutManager.availableLayouts) { layout in
                                     let isChecked = eventManager.rightControlLayoutIDs.contains(layout.id)
                                     
-                                    Button(action: {
-                                        toggleRightControlLayout(layout.id)
-                                    }) {
-                                        HStack(spacing: 10) {
-                                            ZStack {
-                                                RoundedRectangle(cornerRadius: 3)
-                                                    .fill(isChecked ? Color.accentColor.opacity(0.15) : Color.clear)
-                                                    .frame(width: 14, height: 14)
-                                                    .overlay(
-                                                        RoundedRectangle(cornerRadius: 3)
-                                                            .stroke(isChecked ? Color.accentColor : Color.primary.opacity(0.2), lineWidth: 1)
-                                                    )
-                                                if isChecked {
-                                                    Image(systemName: "checkmark")
-                                                        .font(.system(size: 9, weight: .bold))
-                                                        .foregroundColor(.accentColor)
-                                                }
+                                    HStack(spacing: 10) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 3)
+                                                .fill(isChecked ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.0001))
+                                                .frame(width: 14, height: 14)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 3)
+                                                        .stroke(isChecked ? Color.accentColor : Color.primary.opacity(0.2), lineWidth: 1)
+                                                )
+                                            if isChecked {
+                                                Image(systemName: "checkmark")
+                                                    .font(.system(size: 9, weight: .bold))
+                                                    .foregroundColor(.accentColor)
                                             }
-                                            Text(layout.name)
-                                                .font(.system(size: 13, weight: .medium))
-                                                .foregroundColor(isChecked ? .primary : .secondary)
-                                                .lineLimit(1)
                                         }
+                                        Text(layout.name)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundColor(isChecked ? .primary : .secondary)
+                                            .lineLimit(1)
+                                        
+                                        Spacer()
                                     }
-                                    .buttonStyle(.plain)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        toggleRightControlLayout(layout.id)
+                                    }
                                 }
                             }
                         }
@@ -220,6 +221,7 @@ struct SettingsView: View {
         .frame(width: 400, height: 500)
         .onAppear {
             layoutManager.refreshAvailableLayouts()
+            eventManager.validateAndFilterLayouts()
             eventManager.checkAccessibility(prompt: false)
             launchManager.refreshStatus()
         }
@@ -228,7 +230,11 @@ struct SettingsView: View {
     private func toggleRightControlLayout(_ id: String) {
         var current = eventManager.rightControlLayoutIDs
         if current.contains(id) {
-            if current.count > 1 {
+            // Only allow removal if at least one valid system layout remains in the selected list
+            let availableIDs = layoutManager.availableLayouts.map { $0.id }
+            let validCurrentCount = current.filter { availableIDs.contains($0) }.count
+            
+            if validCurrentCount > 1 {
                 current.removeAll(where: { $0 == id })
             }
         } else {

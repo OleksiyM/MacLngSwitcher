@@ -6,23 +6,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var settingsWindow: NSWindow?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Инициализируем элемент строки меню (StatusBar)
+        // Initialize the menu bar item (StatusBar)
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem.button {
-            // Используем стандартную системную иконку клавиатуры
+            // Use a standard system keyboard icon
             if let image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "MacLngSwitcher") {
-                // Делаем иконку адаптивной для темной/светлой темы строки меню
+                // Make the icon template-based to adapt to dark/light menu bar themes
                 image.isTemplate = true
                 button.image = image
             }
             
-            // Настраиваем обработку кликов (левый и правый)
+            // Configure click handlers (left and right click)
             button.action = #selector(statusBarButtonClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         
-        // Автоматически запрашиваем права при первом запуске (не блокируя интерфейс)
+        // Prompt for accessibility access automatically on first launch (non-blocking)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             EventTapManager.shared.checkAccessibility(prompt: true)
         }
@@ -31,17 +31,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func statusBarButtonClicked(_ sender: NSStatusBarButton) {
         let event = NSApp.currentEvent
         if event?.type == .rightMouseUp {
-            // Правый клик -> Показываем контекстное меню
+            // Right click -> Show context menu
             statusItem.menu = makeContextMenu()
             statusItem.button?.performClick(nil)
-            statusItem.menu = nil // Очищаем ссылку, чтобы не ломать левый клик
+            statusItem.menu = nil // Clear the menu to not break the left click
         } else {
-            // Левый клик -> Открываем окно настроек
+            // Left click -> Open settings window
             showSettings()
         }
     }
     
-    // Создание меню по правому клику
+    // Create the right-click context menu
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
         
@@ -66,7 +66,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         EventTapManager.shared.isEnabled.toggle()
         sender.state = EventTapManager.shared.isEnabled ? .on : .off
         
-        // Перезапускаем EventTap при включении/выключении
+        // Toggle EventTap based on status
         if EventTapManager.shared.isEnabled {
             EventTapManager.shared.startEventTap()
         } else {
@@ -78,7 +78,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             let contentView = SettingsView()
             
-            // Создаем безрамочное окно настроек
+            // Create a borderless settings window
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 400, height: 500),
                 styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
@@ -94,22 +94,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.isReleasedWhenClosed = false
             window.hasShadow = true
             
-            // Делаем углы окна круглыми и красивыми
+            // Set up the hosting view for SwiftUI content
             window.contentView = NSHostingView(rootView: contentView)
             
             self.settingsWindow = window
         }
         
-        // Показываем окно по центру экрана
+        // Center and bring the window to the front
         settingsWindow?.center()
         settingsWindow?.makeKeyAndOrderFront(nil)
         
-        // Делаем наше приложение активным, чтобы окно было поверх других
+        // Make the application active to focus the window
         NSApp.activate(ignoringOtherApps: true)
     }
     
     func applicationWillTerminate(_ aNotification: Notification) {
-        // Останавливаем EventTap перед выходом
+        // Stop EventTap before exiting
         EventTapManager.shared.stopEventTap()
     }
 }

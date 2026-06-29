@@ -20,7 +20,7 @@ public class KeyboardLayoutManager: ObservableObject {
         refreshAvailableLayouts()
     }
     
-    /// Получает список всех включенных в системе раскладок клавиатуры
+    /// Retrieves a list of all enabled keyboard layouts in the system
     public func refreshAvailableLayouts() {
         var layouts: [KeyboardLayout] = []
         
@@ -32,18 +32,18 @@ public class KeyboardLayoutManager: ObservableObject {
         let sources = sourcesRef.takeRetainedValue() as! [TISInputSource]
         
         for source in sources {
-            // Проверяем, можно ли выбрать эту раскладку (isSelectable)
+            // Check if the layout can be selected (isSelectable)
             let isSelectablePtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceIsSelectCapable)
             let isSelectable = isSelectablePtr.map { Unmanaged<CFBoolean>.fromOpaque($0).takeUnretainedValue() == kCFBooleanTrue } ?? false
             
             if !isSelectable { continue }
             
-            // Получаем ID раскладки
+            // Get layout ID
             let idPtr = TISGetInputSourceProperty(source, kTISPropertyInputSourceID)
             guard let idRaw = idPtr else { continue }
             let id = Unmanaged<CFString>.fromOpaque(idRaw).takeUnretainedValue() as String
             
-            // Получаем локализованное имя
+            // Get localized name
             let namePtr = TISGetInputSourceProperty(source, kTISPropertyLocalizedName)
             let name: String
             if let nameRaw = namePtr {
@@ -52,18 +52,18 @@ public class KeyboardLayoutManager: ObservableObject {
                 name = id
             }
             
-            // Исключаем методы ввода (например, японский/китайский Kotoeri, если они не являются обычными раскладками,
-            // но обычно они тоже фильтруются по категории. Оставляем те, которые пользователь может выбрать напрямую)
+            // Exclude input methods (like Japanese/Chinese Kotoeri) unless they are regular layouts.
+            // Usually they are filtered by category. Keep only direct user-selectable layouts.
             if !layouts.contains(where: { $0.id == id }) {
                 layouts.append(KeyboardLayout(id: id, name: name))
             }
         }
         
-        // Сортируем по имени для удобства
+        // Sort by name for convenience
         self.availableLayouts = layouts.sorted(by: { $0.name < $1.name })
     }
     
-    /// Возвращает ID текущей активной раскладки
+    /// Returns the ID of the currently active keyboard layout
     public func getCurrentLayoutID() -> String? {
         let currentSource = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
         let idPtr = TISGetInputSourceProperty(currentSource, kTISPropertyInputSourceID)
@@ -71,7 +71,7 @@ public class KeyboardLayoutManager: ObservableObject {
         return Unmanaged<CFString>.fromOpaque(idRaw).takeUnretainedValue() as String
     }
     
-    /// Переключает на раскладку с указанным ID
+    /// Switches to the keyboard layout with the specified ID
     @discardableResult
     public func selectLayout(id: String) -> Bool {
         let filter = [
@@ -89,12 +89,12 @@ public class KeyboardLayoutManager: ObservableObject {
         return result == noErr
     }
     
-    /// Циклическое переключение между заданным массивом раскладок с автоматическим пропуском недоступных
+    /// Cycles through the specified array of layouts, automatically skipping unavailable ones
     public func cycleLayouts(ids: [String]) {
         guard !ids.isEmpty else { return }
         
         guard let currentID = getCurrentLayoutID() else {
-            // Пытаемся включить хотя бы одну раскладку из списка
+            // Try to enable at least one layout from the list
             for id in ids {
                 if selectLayout(id: id) { return }
             }
@@ -102,18 +102,18 @@ public class KeyboardLayoutManager: ObservableObject {
         }
         
         if let currentIndex = ids.firstIndex(of: currentID) {
-            // Начинаем перебор со следующего элемента по кругу
+            // Start cycling from the next layout in the list
             for i in 1...ids.count {
                 let nextIndex = (currentIndex + i) % ids.count
-                // Если круг замкнулся и мы вернулись к текущему языку, выходим
+                // If we cycled back to the current layout, exit
                 if nextIndex == currentIndex { break }
                 
                 if selectLayout(id: ids[nextIndex]) {
-                    return // Успешно переключили!
+                    return // Successfully switched!
                 }
             }
         } else {
-            // Текущий язык не в списке, пытаемся включить первую доступную раскладку
+            // Current layout not in list, try to enable the first available layout
             for id in ids {
                 if selectLayout(id: id) { return }
             }
