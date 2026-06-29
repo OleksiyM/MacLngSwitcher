@@ -97,11 +97,16 @@ struct SettingsView: View {
                 
                 // 2. Key Mappings (Side-by-Side)
                 HStack(alignment: .top, spacing: 16) {
-                    // Left Control (Switch)
+                    // Left Modifier (Switch)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Left Control")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
+                        Picker("", selection: $eventManager.leftModifier) {
+                            Text("Left Control (⌃)").tag("control")
+                            Text("Left Option (⌥)").tag("option")
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(height: 20)
                         
                         Text("Switch to layout:")
                             .font(.system(size: 11))
@@ -122,13 +127,18 @@ struct SettingsView: View {
                     
                     Divider()
                         .background(Color.primary.opacity(0.08))
-                        .frame(height: 110)
+                        .frame(height: 120)
                     
-                    // Right Control (Cycle List)
+                    // Right Modifier (Cycle List)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Right Control")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.primary)
+                        Picker("", selection: $eventManager.rightModifier) {
+                            Text("Right Control (⌃)").tag("control")
+                            Text("Right Option (⌥)").tag("option")
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(height: 20)
                         
                         Text("Cycle layout list:")
                             .font(.system(size: 11))

@@ -1,6 +1,8 @@
 import Foundation
 import Cocoa
 import ApplicationServices
+import IOKit
+import IOKit.ps
 
 public class EventTapManager: ObservableObject {
     public static let shared = EventTapManager()
@@ -27,6 +29,18 @@ public class EventTapManager: ObservableObject {
         }
     }
     
+    @Published public var leftModifier: String {
+        didSet {
+            UserDefaults.standard.set(leftModifier, forKey: "leftModifier")
+        }
+    }
+    
+    @Published public var rightModifier: String {
+        didSet {
+            UserDefaults.standard.set(rightModifier, forKey: "rightModifier")
+        }
+    }
+    
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     
@@ -37,8 +51,8 @@ public class EventTapManager: ObservableObject {
         var hasOtherKeys: Bool = false
     }
     
-    private var leftControlState = ModifierState()
-    private var rightControlState = ModifierState()
+    private var leftModifierState = ModifierState()
+    private var rightModifierState = ModifierState()
     
     private init() {
         // Ensure keyboard layouts are scanned
@@ -88,10 +102,35 @@ public class EventTapManager: ObservableObject {
         let savedTimeout = UserDefaults.standard.double(forKey: "clickTimeout")
         let chosenTimeout = savedTimeout > 0 ? savedTimeout : 0.35
         
+        let chosenLeftMod: String
+        if let savedLeftMod = UserDefaults.standard.string(forKey: "leftModifier") {
+            chosenLeftMod = savedLeftMod
+        } else {
+            chosenLeftMod = "control"
+            UserDefaults.standard.set(chosenLeftMod, forKey: "leftModifier")
+        }
+        
+        let chosenRightMod: String
+        if let savedRightMod = UserDefaults.standard.string(forKey: "rightModifier") {
+            chosenRightMod = savedRightMod
+        } else {
+            // Check if portable device (MacBook)
+            var isPortable = false
+            if let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+               let list = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [CFTypeRef] {
+                isPortable = !list.isEmpty
+            }
+            chosenRightMod = isPortable ? "option" : "control"
+            UserDefaults.standard.set(chosenRightMod, forKey: "rightModifier")
+            DebugLogger.log("[EventTap] First launch modifier auto-detection: isPortable=\(isPortable) -> choosing default Right Modifier: \(chosenRightMod)")
+        }
+        
         // 2. Initialize properties
         self.leftControlLayoutID = chosenLeftID
         self.rightControlLayoutIDs = chosenRightIDs
         self.clickTimeout = chosenTimeout
+        self.leftModifier = chosenLeftMod
+        self.rightModifier = chosenRightMod
         
         // Validate and filter layouts right after loading
         validateAndFilterLayouts()
@@ -219,11 +258,11 @@ public class EventTapManager: ObservableObject {
         
         // If a normal key is pressed/released, mark "hasOtherKeys" on active modifiers
         if type == .keyDown || type == .keyUp {
-            if leftControlState.isPressed {
-                leftControlState.hasOtherKeys = true
+            if leftModifierState.isPressed {
+                leftModifierState.hasOtherKeys = true
             }
-            if rightControlState.isPressed {
-                rightControlState.hasOtherKeys = true
+            if rightModifierState.isPressed {
+                rightModifierState.hasOtherKeys = true
             }
             return Unmanaged.passUnretained(event)
         }
@@ -236,59 +275,62 @@ public class EventTapManager: ObservableObject {
             
             let rawFlags = nsEvent.modifierFlags.rawValue
             
-            // Device-dependent masks for left and right Control
-            let leftCtrlFlag: UInt = 0x00000001
-            let rightCtrlFlag: UInt = 0x00002000
+            // Resolve active dynamic targets based on user configuration
+            let leftTargetKeycode: Int64 = (leftModifier == "option") ? 58 : 59
+            let leftTargetMask: UInt = (leftModifier == "option") ? 0x00000020 : 0x00000001
             
-            let isLeftNowPressed = (rawFlags & leftCtrlFlag) != 0
-            let isRightNowPressed = (rawFlags & rightCtrlFlag) != 0
+            let rightTargetKeycode: Int64 = (rightModifier == "option") ? 61 : 62
+            let rightTargetMask: UInt = (rightModifier == "option") ? 0x00000040 : 0x00002000
+            
+            let isLeftNowPressed = (rawFlags & leftTargetMask) != 0
+            let isRightNowPressed = (rawFlags & rightTargetMask) != 0
             
             DebugLogger.log("[EventTap] flagsChanged: keycode=\(keycode), leftPressed=\(isLeftNowPressed), rightPressed=\(isRightNowPressed), rawFlags=\(rawFlags)")
             
-            // If left Control is pressed, but another modifier (like Shift) triggers
-            if leftControlState.isPressed && keycode != 59 {
-                leftControlState.hasOtherKeys = true
+            // If left modifier is pressed, but another modifier triggers
+            if leftModifierState.isPressed && keycode != leftTargetKeycode {
+                leftModifierState.hasOtherKeys = true
             }
-            // If right Control is pressed, but another modifier triggers
-            if rightControlState.isPressed && keycode != 62 {
-                rightControlState.hasOtherKeys = true
+            // If right modifier is pressed, but another modifier triggers
+            if rightModifierState.isPressed && keycode != rightTargetKeycode {
+                rightModifierState.hasOtherKeys = true
             }
             
-            // 1. Left Control Handling (keycode 59)
-            if keycode == 59 {
-                if isLeftNowPressed && !leftControlState.isPressed {
+            // 1. Left Modifier Handling
+            if keycode == leftTargetKeycode {
+                if isLeftNowPressed && !leftModifierState.isPressed {
                     // Key pressed
-                    leftControlState.isPressed = true
-                    leftControlState.pressTime = Date()
-                    leftControlState.hasOtherKeys = false
-                    DebugLogger.log("[EventTap] Left Control pressed")
-                } else if !isLeftNowPressed && leftControlState.isPressed {
+                    leftModifierState.isPressed = true
+                    leftModifierState.pressTime = Date()
+                    leftModifierState.hasOtherKeys = false
+                    DebugLogger.log("[EventTap] Left Modifier (\(leftModifier)) pressed")
+                } else if !isLeftNowPressed && leftModifierState.isPressed {
                     // Key released
-                    let duration = Date().timeIntervalSince(leftControlState.pressTime)
-                    DebugLogger.log("[EventTap] Left Control released, duration: \(duration) sec, hasOtherKeys: \(leftControlState.hasOtherKeys)")
-                    if !leftControlState.hasOtherKeys && duration < clickTimeout {
+                    let duration = Date().timeIntervalSince(leftModifierState.pressTime)
+                    DebugLogger.log("[EventTap] Left Modifier (\(leftModifier)) released, duration: \(duration) sec, hasOtherKeys: \(leftModifierState.hasOtherKeys)")
+                    if !leftModifierState.hasOtherKeys && duration < clickTimeout {
                         triggerLeftControlAction()
                     }
-                    leftControlState.isPressed = false
+                    leftModifierState.isPressed = false
                 }
             }
             
-            // 2. Right Control Handling (keycode 62)
-            if keycode == 62 {
-                if isRightNowPressed && !rightControlState.isPressed {
+            // 2. Right Modifier Handling
+            if keycode == rightTargetKeycode {
+                if isRightNowPressed && !rightModifierState.isPressed {
                     // Key pressed
-                    rightControlState.isPressed = true
-                    rightControlState.pressTime = Date()
-                    rightControlState.hasOtherKeys = false
-                    DebugLogger.log("[EventTap] Right Control pressed")
-                } else if !isRightNowPressed && rightControlState.isPressed {
+                    rightModifierState.isPressed = true
+                    rightModifierState.pressTime = Date()
+                    rightModifierState.hasOtherKeys = false
+                    DebugLogger.log("[EventTap] Right Modifier (\(rightModifier)) pressed")
+                } else if !isRightNowPressed && rightModifierState.isPressed {
                     // Key released
-                    let duration = Date().timeIntervalSince(rightControlState.pressTime)
-                    DebugLogger.log("[EventTap] Right Control released, duration: \(duration) sec, hasOtherKeys: \(rightControlState.hasOtherKeys)")
-                    if !rightControlState.hasOtherKeys && duration < clickTimeout {
+                    let duration = Date().timeIntervalSince(rightModifierState.pressTime)
+                    DebugLogger.log("[EventTap] Right Modifier (\(rightModifier)) released, duration: \(duration) sec, hasOtherKeys: \(rightModifierState.hasOtherKeys)")
+                    if !rightModifierState.hasOtherKeys && duration < clickTimeout {
                         triggerRightControlAction()
                     }
-                    rightControlState.isPressed = false
+                    rightModifierState.isPressed = false
                 }
             }
         }
@@ -298,21 +340,21 @@ public class EventTapManager: ObservableObject {
     
     /// Trigger action on Left Control click
     private func triggerLeftControlAction() {
-        DebugLogger.log("[EventTap] Left Control click -> switching to \(leftControlLayoutID)")
+        DebugLogger.log("[EventTap] Left Modifier (\(leftModifier)) click -> switching to \(leftControlLayoutID)")
         DispatchQueue.main.async {
             let success = KeyboardLayoutManager.shared.selectLayout(id: self.leftControlLayoutID)
-            DebugLogger.log("[EventTap] Switch Left Control layout result: \(success)")
+            DebugLogger.log("[EventTap] Switch Left Modifier (\(self.leftModifier)) layout result: \(success)")
         }
     }
     
     /// Trigger action on Right Control click
     private func triggerRightControlAction() {
-        DebugLogger.log("[EventTap] Right Control click -> cycling layouts \(rightControlLayoutIDs)")
+        DebugLogger.log("[EventTap] Right Modifier (\(rightModifier)) click -> cycling layouts \(rightControlLayoutIDs)")
         DispatchQueue.main.async {
             let currentBefore = KeyboardLayoutManager.shared.getCurrentLayoutID() ?? "unknown"
             KeyboardLayoutManager.shared.cycleLayouts(ids: self.rightControlLayoutIDs)
             let currentAfter = KeyboardLayoutManager.shared.getCurrentLayoutID() ?? "unknown"
-            DebugLogger.log("[EventTap] Switch Right Control layout: \(currentBefore) -> \(currentAfter)")
+            DebugLogger.log("[EventTap] Switch Right Modifier (\(self.rightModifier)) layout: \(currentBefore) -> \(currentAfter)")
         }
     }
 }
